@@ -1,0 +1,30 @@
+name: VPS Tickle & JSON Identity Audit
+on:
+  repository_dispatch:
+    types: [tickle_deploy]
+
+jobs:
+  audit_identity:
+    # This line tells GitHub which Environment vault to open
+    environment: ${{ github.event.client_payload.env_name }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Full JSON Identity Check
+        run: |
+          echo "Account: ${{ github.event.client_payload.env_name }}"
+          echo "Run # ${{ github.event.client_payload.run_count }}. Grab the UA packed by your VPS"
+          curl -s -H "User-Agent: ${{ github.event.client_payload.user_agent }}" https://ifconfig.me/all.json
+          echo "Verified Identity Data:"
+
+      - name: Execute Powerhouse Deployment
+        env:
+          # These now pull from the specific Environment selected above
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          GITLAB_REPO_URL: ${{ secrets.GITLAB_REPO_URL }}
+          RUN_COUNT: ${{ github.event.client_payload.run_count }}
+        run: |
+          chmod +x powerhouse_script.sh
+          ./powerhouse_script.sh "$RENDER_API_KEY" "$GITLAB_REPO_URL" "$RUN_COUNT"
