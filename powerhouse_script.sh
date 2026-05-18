@@ -6,19 +6,37 @@ RENDER_API_KEY="${1:-}"
 GITLAB_REPO_URL="${2:-}"
 CURRENT_RUN_INDEX="${3:-1}" 
 
+# Ensure the proxy is active for all child processes in this script
+export ALL_PROXY="socks5h://127.0.0.1:40000"
+
 [[ -z "$RENDER_API_KEY" || -z "$GITLAB_REPO_URL" ]] && exit 1
+
+# --- 🛡️ STEALTH VERIFIER ---
+echo "🔍 Performing Pre-Flight Stealth Audit..."
+# Verify the IP is shifted before touching Render
+CHECK_IP=$(curl -s --max-time 10 https://ifconfig.me)
+
+if [[ -z "$CHECK_IP" ]]; then
+    echo "FATAL: Proxy connection failed. Shield is DOWN."
+    exit 1
+fi
+
+echo "🚀 Shield Verified. Deployment IP: $CHECK_IP"
+echo "------------------------------------------------"
 
 API="https://api.render.com/v1"
 AUTH_HDR="Authorization: Bearer ${RENDER_API_KEY}"
 ACC_HDR="Accept: application/json"
 
 # --- OWNER ID & REGION ---
+# Every curl call below now automatically uses the SOCKS5h proxy
 OWNER_ID=$(curl -s -H "$AUTH_HDR" -H "$ACC_HDR" "${API}/owners?limit=1" | jq -r 'if type=="array" then .[0].owner.id // .[0].team.id else .owner.id // .id end')
 POOL=("frankfurt" "oregon" "ohio" "virginia")
 REGION=${POOL[$(( (CURRENT_RUN_INDEX - 1) % 4 ))]}
 SERVICE_NAME="powerhouse-web-${CURRENT_RUN_INDEX}"
 
-# --- THE TICKLE (Restored envSpecificDetails) ---
+# --- THE TICKLE ---
+echo "→ Requesting Service Creation for $SERVICE_NAME..."
 CREATE_RESP=$(curl -s -X POST "${API}/services" \
   -H "$AUTH_HDR" -H "Content-Type: application/json" -H "$ACC_HDR" \
   -d "{
@@ -57,7 +75,6 @@ while true; do
     STATUS=$(echo "$STATUS_RESP" | jq -r 'if type=="array" then .[0].deploy.status else .status end // "pending"')
     
     if [[ "$STATUS" == "live" ]]; then
-        # This string is what your VPS master script scrapes from the GitHub logs
         echo "RENDER_SSH_RESULT=ssh ${SERVICE_ID}@ssh.${REGION}.render.com"
         break
     fi
