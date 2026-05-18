@@ -2,6 +2,7 @@ name: Socks5 Tester
 on:
   repository_dispatch:
     types: [tickle_deploy]
+  workflow_dispatch: # This adds the manual "Run workflow" button in the Actions tab
 
 jobs:
   audit_identity:
