@@ -1,4 +1,4 @@
-name: VPS Tickle & JSON Identity Audit
+name: Socks5 Tester
 on:
   repository_dispatch:
     types: [tickle_deploy]
