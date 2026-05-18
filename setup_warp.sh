@@ -1,61 +1,42 @@
 #!/usr/bin/env bash
+# Exit on any error, and print every command as it runs
+set -ex
 
-# --- 1. PRE-REQUISITES & TIMEZONE ---
-export DEBIAN_FRONTEND=noninteractive
-apt-get update -y >/dev/null
-apt-get install -y --no-install-recommends \
-    curl lsb-release wget gpg psmisc net-tools \
-    tzdata procps iputils-ping bc >/dev/null
+echo "--- STARTING VERBOSE INSTALL ---"
 
-ln -fs /usr/share/zoneinfo/Africa/Johannesburg /etc/localtime >/dev/null
-dpkg-reconfigure --frontend noninteractive tzdata >/dev/null
+# 1. Add Repository with feedback
+curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | gpg --dearmor --yes -o /usr/share/keyrings/cloudflare-warp.gpg
 
-# --- 2. RESILIENT REPO INJECTION ---
-if ! command -v warp-cli &>/dev/null; then
-    echo "⚠️ Installing Cloudflare Warp..."
-    # Ensure the keyrings directory exists
-    mkdir -p /usr/share/keyrings
-    
-    # Download key and add repo in one clean pipe
-    curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | gpg --dearmor --yes -o /usr/share/keyrings/cloudflare-warp.gpg
-    
-    # Use 'tee' with a bracketed arch to avoid mismatches
-    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/cloudflare-warp.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" | \
-    tee /etc/apt/sources.list.d/cloudflare-warp.list >/dev/null
-    
-    apt-get update -y >/dev/null
-    apt-get install -y cloudflare-warp >/dev/null
-fi
+# Check if lsb_release is actually working
+CODENAME=$(lsb_release -cs)
+echo "Detected Ubuntu Codename: $CODENAME"
 
-# --- 3. SYSTEMD-AWARE SERVICE START ---
-# Ensure local state directory exists for background mode
-mkdir -p /var/lib/cloudflare-warp
+echo "deb [arch=amd64 signed-by=/usr/share/keyrings/cloudflare-warp.gpg] https://pkg.cloudflareclient.com/ $CODENAME main" | tee /etc/apt/sources.list.d/cloudflare-warp.list
 
+# 2. Update and Install (No silence)
+apt-get update
+apt-get install -y cloudflare-warp psmisc net-tools
+
+# 3. Start Service
 if [ -d /run/systemd/system ] || pidof systemd >/dev/null; then
-    systemctl enable --now warp-svc >/dev/null 2>&1
+    echo "Using Systemd..."
+    systemctl enable --now warp-svc
 else
-    if ! pidof warp-svc >/dev/null; then
-        killall warp-svc 2>/dev/null || true
-        # Run daemon with high priority in background
-        nohup warp-svc >/var/log/warp-svc.log 2>&1 &
-        # Give the daemon a moment to bind to the control socket
-        for i in {1..5}; do pidof warp-svc >/dev/null && break || sleep 1; done
-    fi
+    echo "Systemd not found, using nohup..."
+    mkdir -p /var/lib/cloudflare-warp
+    nohup warp-svc > /var/log/warp-svc.log 2>&1 &
+    sleep 5
 fi
 
-# --- 4. REGISTRATION & PROXY MODE ---
-# Accepting TOS and setting up proxy
-warp-cli --accept-tos registration new 2>/dev/null || true
+# 4. Handshake with Cloudflare
+# This is usually where things hang if the daemon isn't ready
+warp-cli --accept-tos registration new
 warp-cli --accept-tos mode proxy
 warp-cli --accept-tos connect
-sleep 3
 
-# --- 5. THE AUDIT ---
-echo "--- NETWORK AUDIT ---"
-REAL_IP=$(curl -s ifconfig.me)
-PROXY_IP=$(curl -s -x socks5h://127.0.0.1:40000 ifconfig.me)
+sleep 2
 
-echo "DIRECT IP: $REAL_IP"
-echo "WARP   IP: $PROXY_IP"
-echo "----------------------"
 netstat -ntlp
+
+echo "--- DAEMON STATUS ---"
+pidof warp-svc || echo "warp-svc IS NOT RUNNING"
