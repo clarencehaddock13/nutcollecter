@@ -4,7 +4,7 @@ set -euo pipefail
 # --- CONFIG ---
 RENDER_API_KEY="${1:-}"
 GITLAB_REPO_URL="${2:-}"
-CURRENT_RUN_INDEX="${3:-1}" 
+CURRENT_RUN_INDEX="${3:-1}"
 
 # Ensure the proxy is active for all child processes in this script
 export ALL_PROXY="socks5h://127.0.0.1:40000"
