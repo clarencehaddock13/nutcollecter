@@ -14,7 +14,7 @@ export ALL_PROXY="socks5h://127.0.0.1:40000"
 # --- 🛡️ STEALTH VERIFIER ---
 echo "🔍 Performing Pre-Flight Stealth Audit..."
 # Verify the IP is shifted before touching Render
-CHECK_IP=$(curl -s --max-time 10 https://ifconfig.me)
+CHECK_IP=$(curl -4 -s --max-time 10 https://ifconfig.me)
 
 if [[ -z "$CHECK_IP" ]]; then
     echo "FATAL: Proxy connection failed. Shield is DOWN."
