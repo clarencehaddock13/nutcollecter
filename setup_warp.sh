@@ -1,64 +1,68 @@
 #!/usr/bin/env bash
-# Enable debug mode to see every command executed
+# Production-Hardened Deployment Script
 set -x
+set -e
 
-echo "Initializing environment and cleaning up old configs..."
-# Kill any existing instances to prevent port conflicts
-pkill wireproxy || true
-rm -f warp-proxy.conf wgcf-profile.conf wgcf-account.toml
+# 1. Kill any existing processes on port 40000
+echo "Ensuring port 40000 is free..."
+fuser -k 40000/tcp || true
 
-# 2. Download wgcf dynamically
-echo "Downloading latest wgcf build..."
-curl -fsSL $(curl -s https://api.github.com/repos/ViRb3/wgcf/releases/latest | grep -oP '"browser_download_url": "\K[^"]*linux_amd64') -o wgcf
-chmod +x wgcf
+# 2. Cleanup artifacts
+cleanup() {
+    rm -f xray Xray-linux-64.zip config.json wgcf-profile.conf wgcf-account.toml
+}
+trap cleanup EXIT
 
-# 3. Create a unique new Cloudflare account and generate keys dynamically
-echo "Registering unique account with Cloudflare..."
-./wgcf register --accept-tos
-echo "Generating dynamic WireGuard profile keys..."
-./wgcf generate
+# 3. Download & Clean-room extraction
+echo "Preparing Xray binary..."
+rm -f xray geoip.dat geosite.dat
+curl -L -o Xray-linux-64.zip https://github.com/XTLS/Xray-core/releases/download/v26.3.27/Xray-linux-64.zip
+unzip -o Xray-linux-64.zip
+chmod +x xray
 
-# FIX: Remove IPv6 addresses to prevent EAFNOSUPPORT (Exit Code 97)
-sed -i '/Address =.*:.*\/.*$/d' wgcf-profile.conf
-
-# 4. Download wireproxy (User-Space Tunnel Client)
-echo "Downloading latest wireproxy engine..."
-curl -L -o wireproxy.tar.gz https://github.com/windtf/wireproxy/releases/download/v1.0.9/wireproxy_linux_amd64.tar.gz
-tar -xzf wireproxy.tar.gz
-chmod +x wireproxy
-
-
-
-
-# 5. Build the proxy configuration dynamically
-echo "Parsing generated keys and assembling your wireproxy configuration..."
-cat wgcf-profile.conf > warp-proxy.conf
-# Swap the domain string for the direct Anycast IP to prevent container DNS lookup blocks
-sed -i 's/Endpoint = engage.cloudflareclient.com:2408/Endpoint = 162.159.192.1:2408/g' warp-proxy.conf
-echo -e "\n[Socks5]\nBindAddress = 127.0.0.1:40000" >> warp-proxy.conf
-
-# 6. Boot the engine silently into the background
-echo "Starting wireproxy server natively in user-space on port 40000..."
-./wireproxy -c warp-proxy.conf > /dev/null 2>&1 &
-WIREPROXY_PID=$!
-
-# 4. THE PORT CHECK (Wait loop for the socket)
-echo "Waiting for port 40000 to open..."
-for i in {1..10}; do
-    # Using 'ss' as a more modern alternative to netstat, but falling back to netstat
-    if netstat -ntlp 2>/dev/null | grep -q ":40000"; then
-        echo "✅ PORT 40000 IS LIVE!"
-        break
-    fi
-    echo "Attempt $i: Port not ready yet..."
+# 4. Register & Generate with retry
+echo "Registering with Cloudflare..."
+./wgcf register --accept-tos || true
+for i in {1..5}; do
+    ./wgcf generate
+    if grep -q "Address" wgcf-profile.conf; then break; fi
     sleep 2
 done
 
-# 5. Final Socket Dump & Verification
-echo "--- FULL LISTENING PORTS ---"
-netstat -ntlp 2>/dev/null || ss -ntlp
+# 5. Extract Address & Config
+PRIV_KEY=$(grep "PrivateKey" wgcf-profile.conf | awk '{print $3}')
+PEER_PUB=$(grep "PublicKey" wgcf-profile.conf | awk '{print $3}')
+ADDR=$(grep "Address" wgcf-profile.conf | sed 's/Address = //g' | cut -d',' -f1 | tr -d ' ')
 
-echo "Testing live tunnel traffic output..."
-curl -s -x socks5h://127.0.0.1:40000 api.ipify.org; echo ""
+cat <<EOF > config.json
+{
+  "inbounds": [{"port": 40000, "protocol": "socks", "settings": {"udp": true}}],
+  "outbounds": [{
+    "protocol": "wireguard",
+    "settings": {
+      "secretKey": "$PRIV_KEY",
+      "peers": [{"publicKey": "$PEER_PUB", "endpoint": "162.159.195.1:2408"}],
+      "address": ["$ADDR"]
+    }
+  }]
+}
+EOF
 
-echo -e "\n🚀 Success! Fresh dynamic connection active on 127.0.0.1:40000"
+# 6. Start Xray
+echo "Starting Xray proxy..."
+./xray -c config.json &
+
+# 7. Verification
+echo "Verifying proxy connectivity..."
+for i in {1..10}; do
+    if netstat -ntlp 2>/dev/null | grep -q ":40000"; then break; fi
+    sleep 2
+done
+
+PROXY_IP=$(curl -4 -s --max-time 10 -x socks5h://127.0.0.1:40000 https://ifconfig.me)
+if [[ -n "$PROXY_IP" ]]; then
+    echo "🚀 Success! Proxy is active on 127.0.0.1:40000 (WARP IP: $PROXY_IP)"
+else
+    echo "❌ CRITICAL: Proxy failed to route traffic."
+    exit 1
+fi
