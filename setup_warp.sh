@@ -19,7 +19,7 @@ echo "Generating dynamic WireGuard profile keys..."
 ./wgcf generate
 
 # FIX: Remove IPv6 addresses to prevent EAFNOSUPPORT (Exit Code 97)
-sed -i '/Address =.*:.*\/.*$/d' wgcf-profile.conf
+#sed -i '/Address =.*:.*\/.*$/d' wgcf-profile.conf
 
 # 4. Download wireproxy (User-Space Tunnel Client)
 echo "Downloading latest wireproxy engine..."
