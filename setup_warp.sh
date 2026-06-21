@@ -19,13 +19,16 @@ echo "Generating dynamic WireGuard profile keys..."
 ./wgcf generate
 
 # FIX: Remove IPv6 addresses to prevent EAFNOSUPPORT (Exit Code 97)
-#sed -i '/Address =.*:.*\/.*$/d' wgcf-profile.conf
+sed -i '/Address =.*:.*\/.*$/d' wgcf-profile.conf
 
 # 4. Download wireproxy (User-Space Tunnel Client)
 echo "Downloading latest wireproxy engine..."
 curl -L -o wireproxy.tar.gz https://github.com/windtf/wireproxy/releases/download/v1.0.9/wireproxy_linux_amd64.tar.gz
 tar -xzf wireproxy.tar.gz
 chmod +x wireproxy
+
+
+
 
 # 5. Build the proxy configuration dynamically
 echo "Parsing generated keys and assembling your wireproxy configuration..."
@@ -36,13 +39,13 @@ echo -e "\n[Socks5]\nBindAddress = 127.0.0.1:40000" >> warp-proxy.conf
 
 # 6. Boot the engine silently into the background
 echo "Starting wireproxy server natively in user-space on port 40000..."
-# Added -v for logging; check wireproxy.log if it fails again
-./wireproxy -v -c warp-proxy.conf > wireproxy.log 2>&1 &
+./wireproxy -c warp-proxy.conf > /dev/null 2>&1 &
 WIREPROXY_PID=$!
 
 # 4. THE PORT CHECK (Wait loop for the socket)
 echo "Waiting for port 40000 to open..."
 for i in {1..10}; do
+    # Using 'ss' as a more modern alternative to netstat, but falling back to netstat
     if netstat -ntlp 2>/dev/null | grep -q ":40000"; then
         echo "✅ PORT 40000 IS LIVE!"
         break
