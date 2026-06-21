@@ -7,20 +7,25 @@ set -e
 echo "Ensuring port 40000 is free..."
 fuser -k 40000/tcp || true
 
-# 2. Cleanup artifacts
+# 2. Cleanup artifacts on exit
 cleanup() {
-    rm -f xray Xray-linux-64.zip config.json wgcf-profile.conf wgcf-account.toml
+    rm -f xray Xray-linux-64.zip config.json wgcf-profile.conf wgcf-account.toml wgcf geoip.dat geosite.dat
 }
 trap cleanup EXIT
 
-# 3. Download & Clean-room extraction
+# 3. Download wgcf binary
+echo "Downloading wgcf..."
+curl -fsSL $(curl -s https://api.github.com/repos/ViRb3/wgcf/releases/latest | grep -oP '"browser_download_url": "\K[^"]*linux_amd64') -o wgcf
+chmod +x wgcf
+
+# 4. Download & Clean-room extraction for Xray
 echo "Preparing Xray binary..."
 rm -f xray geoip.dat geosite.dat
 curl -L -o Xray-linux-64.zip https://github.com/XTLS/Xray-core/releases/download/v26.3.27/Xray-linux-64.zip
 unzip -o Xray-linux-64.zip
 chmod +x xray
 
-# 4. Register & Generate with retry
+# 5. Register & Generate with retry
 echo "Registering with Cloudflare..."
 ./wgcf register --accept-tos || true
 for i in {1..5}; do
@@ -29,7 +34,7 @@ for i in {1..5}; do
     sleep 2
 done
 
-# 5. Extract Address & Config
+# 6. Extract Address & Config
 PRIV_KEY=$(grep "PrivateKey" wgcf-profile.conf | awk '{print $3}')
 PEER_PUB=$(grep "PublicKey" wgcf-profile.conf | awk '{print $3}')
 ADDR=$(grep "Address" wgcf-profile.conf | sed 's/Address = //g' | cut -d',' -f1 | tr -d ' ')
@@ -48,17 +53,18 @@ cat <<EOF > config.json
 }
 EOF
 
-# 6. Start Xray
+# 7. Start Xray
 echo "Starting Xray proxy..."
 ./xray -c config.json &
 
-# 7. Verification
+# 8. Verification
 echo "Verifying proxy connectivity..."
 for i in {1..10}; do
     if netstat -ntlp 2>/dev/null | grep -q ":40000"; then break; fi
     sleep 2
 done
 
+# 9. Final Test
 PROXY_IP=$(curl -4 -s --max-time 10 -x socks5h://127.0.0.1:40000 https://ifconfig.me)
 if [[ -n "$PROXY_IP" ]]; then
     echo "🚀 Success! Proxy is active on 127.0.0.1:40000 (WARP IP: $PROXY_IP)"
