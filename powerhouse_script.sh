@@ -7,7 +7,7 @@ GITLAB_REPO_URL="${2:-}"
 CURRENT_RUN_INDEX="${3:-1}"
 
 # Ensure proxy is active
-export ALL_PROXY="socks5h://127.0.0.1:40000"
+#export ALL_PROXY="socks5h://127.0.0.1:40000"
 
 # Pre-flight check for dependencies
 if ! command -v jq &> /dev/null; then
