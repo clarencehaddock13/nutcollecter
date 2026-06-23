@@ -1,52 +1,73 @@
-#!/usr/bin/env bash
-# Production-Hardened Deployment Script
+#!/bin/bash
 set -x
-set -e
 
-# 1. Kill any existing instances on port 40000
-# The || true ensures the script doesn't exit if no process is found
-fuser -k 40000/tcp || true
+echo "Initializing environment and cleaning up old configs..."
+kill $(pgrep wireproxy) 2>/dev/null || true
+rm -f wgcf wgcf-profile.conf wgcf-account.toml wireproxy wireproxy.tar.gz warp-proxy.conf
 
-# 2. Safely remove old artifacts if they exist
-# rm -f already ignores missing files, so this is safe as-is
-rm -f wgcf xray config.json wgcf-profile.conf wgcf-account.toml Xray-linux-64.zip geoip.dat geosite.dat
+echo "Downloading latest wgcf build..."
+WGCF_URL=$(curl -s https://api.github.com/repos/ViRb3/wgcf/releases/latest \
+  | grep -oP '"browser_download_url": "\K[^"]*linux_amd64[^"]*' \
+  | grep -v '\.sha256' | head -1)
+curl -fsSL "$WGCF_URL" -o wgcf
+chmod +x wgcf
 
-# 3. Download binaries
-curl -fsSL $(curl -s https://api.github.com/repos/ViRb3/wgcf/releases/latest | grep -oP '"browser_download_url": "\K[^"]*linux_amd64') -o wgcf
-curl -L -o Xray-linux-64.zip https://github.com/XTLS/Xray-core/releases/download/v26.3.27/Xray-linux-64.zip
-unzip -oq Xray-linux-64.zip
-chmod +x xray wgcf
+echo "Registering unique account with Cloudflare..."
+./wgcf register --accept-tos
 
-# 4. Setup Config
-./wgcf register --accept-tos || true
+echo "Generating WireGuard profile..."
 ./wgcf generate
-PRIV=$(grep "PrivateKey" wgcf-profile.conf | awk '{print $3}')
-PUB=$(grep "PublicKey" wgcf-profile.conf | awk '{print $3}')
-ADDR=$(grep "Address" wgcf-profile.conf | sed 's/Address = //g' | cut -d',' -f1 | tr -d ' ')
 
-cat <<EOF > config.json
-{
-  "inbounds": [{"port": 40000, "protocol": "socks", "settings": {"udp": true}}],
-  "outbounds": [{
-    "protocol": "wireguard",
-    "settings": {
-      "secretKey": "$PRIV",
-      "peers": [{"publicKey": "$PUB", "endpoint": "162.159.195.1:2408"}],
-      "address": ["$ADDR"]
-    }
-  }]
-}
-EOF
+echo "Downloading latest wireproxy..."
+curl -fsSL -o wireproxy.tar.gz \
+  https://github.com/pufferffish/wireproxy/releases/latest/download/wireproxy_linux_amd64.tar.gz
+tar -xzf wireproxy.tar.gz
+chmod +x wireproxy
 
-# 5. Start Xray in the background
-# nohup ensures the process stays alive even after this script exits
-nohup ./xray -c config.json > xray.log 2>&1 &
+echo "Assembling wireproxy config with IPv6 disabled..."
+cp wgcf-profile.conf warp-proxy.conf
 
-# 6. Verification
-for i in {1..10}; do
-    if netstat -ntlp 2>/dev/null | grep -q ":40000"; then
-        echo "✅ Proxy is live on port 40000"
-        break
-    fi
-    sleep 2
-done
+# Fix endpoint to IPv4 only
+sed -i 's/Endpoint = engage.cloudflareclient.com:2408/Endpoint = 162.159.192.1:2408/g' warp-proxy.conf
+
+# Strip any IPv6 AllowedIPs entries — keep only IPv4 routes
+sed -i 's|AllowedIPs = 0.0.0.0/0, ::/0|AllowedIPs = 0.0.0.0/0|g' warp-proxy.conf
+sed -i 's|AllowedIPs = ::/0||g' warp-proxy.conf
+
+# Remove any IPv6 DNS entries (e.g. 2606:4700:4700::1111)
+sed -i 's|, *[0-9a-fA-F:]*:[0-9a-fA-F:]*||g' warp-proxy.conf
+
+# Bind SOCKS5 on IPv4 loopback only
+cat >> warp-proxy.conf << 'CONF'
+
+[Socks5]
+BindAddress = 127.0.0.1:40000
+CONF
+
+echo "Starting wireproxy on 127.0.0.1:40000..."
+./wireproxy -c warp-proxy.conf > wireproxy.log 2>&1 &
+WPID=$!
+
+echo "Waiting for tunnel handshake..."
+sleep 4
+
+# Verify process is still alive
+if ! kill -0 $WPID 2>/dev/null; then
+  echo "wireproxy failed to start. Log:"
+  cat wireproxy.log
+  exit 1
+fi
+
+echo "Testing tunnel — expecting Cloudflare IPv4 egress..."
+RESULT=$(curl -s --max-time 10 -x socks5h://127.0.0.1:40000 https://api.ipify.org)
+
+if [[ -z "$RESULT" ]]; then
+  echo "Tunnel test failed. Check wireproxy.log"
+  exit 1
+fi
+
+echo ""
+echo "Egress IP: $RESULT"
+echo ""
+echo "🚀 WARP SOCKS5 proxy active on 127.0.0.1:40000 (IPv4 only)"
+echo "   PID: $WPID | Log: wireproxy.log"
