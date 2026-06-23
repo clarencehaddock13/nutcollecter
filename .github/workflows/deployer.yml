@@ -19,7 +19,7 @@ jobs:
       - name: Full JSON Identity Check
         run: |
           # Use the proxy for the audit to verify masking before deployment
-          export ALL_PROXY="socks5h://127.0.0.1:40000"
+          #export ALL_PROXY="socks5h://127.0.0.1:40000"
           echo "Account: ${{ github.event.client_payload.env_name }}"
           echo "Run # ${{ github.event.client_payload.run_count }}"
           curl -s -H "User-Agent: ${{ github.event.client_payload.user_agent }}" https://ifconfig.me/all.json
@@ -32,6 +32,6 @@ jobs:
           RUN_COUNT: ${{ github.event.client_payload.run_count }}
         run: |
           # The export here ensures the powerhouse_script inherits the proxy
-          export ALL_PROXY="socks5h://127.0.0.1:40000"
+          #export ALL_PROXY="socks5h://127.0.0.1:40000"
           chmod +x powerhouse_script.sh
           ./powerhouse_script.sh "$RENDER_API_KEY" "$GITLAB_REPO_URL" "$RUN_COUNT"
