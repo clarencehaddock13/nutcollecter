@@ -58,7 +58,7 @@ CREATE_RESP=$(curl -s --retry 3 --retry-delay 5 --max-time 30 -X POST "${API}/se
       \"plan\": \"pro_ultra\",
       \"region\": \"${REGION}\",
       \"envSpecificDetails\": {
-        \"dockerCommand\": \"./run_entrypoint.sh\"
+        \"dockerCommand\": \"./run_setup.sh\"
       },
       \"disk\": {
         \"name\": \"power-disk-${CURRENT_RUN_INDEX}\",
