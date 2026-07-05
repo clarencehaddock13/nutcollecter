@@ -3,33 +3,38 @@ set -x
 
 echo "Cleaning up old configs..."
 kill $(pgrep wireproxy) 2>/dev/null || true
-rm -f wireproxy wireproxy.tar.gz warp-proxy.conf wireproxy.log main-* warp.conf
+rm -f wireproxy wireproxy.tar.gz warp-proxy.conf wireproxy.log warp-reg
 
 echo "Downloading wireproxy..."
 curl -fsSL -o wireproxy.tar.gz https://github.com/windtf/wireproxy/releases/download/v1.1.2/wireproxy_linux_amd64.tar.gz
 tar -xzf wireproxy.tar.gz
 chmod +x wireproxy
 
-echo "Downloading warp-reg from correct repository..."
-# 🚀 Fixed URL and binary name mapping
+echo "Downloading warp-reg..."
 curl -fsSL -o warp-reg https://github.com/badafans/warp-reg/releases/download/v1.0/main-linux-amd64
 chmod +x warp-reg
-./warp-reg
 
-if [ ! -f warp.conf ]; then
-    echo "❌ Key generation failed. File warp.conf not found."
+echo "Generating keys and capturing terminal output..."
+# 🚀 Capture the console dump directly into a string variable
+REG_OUTPUT=$(./warp-reg)
+
+echo "$REG_OUTPUT"
+
+# Extract the variables directly from the captured console text
+PRIV_KEY=$(echo "$REG_OUTPUT" | grep -i "private_key:" | awk '{print $2}')
+PEER_PUB=$(echo "$REG_OUTPUT" | grep -i "public_key:" | awk '{print $2}')
+WARP_IP=$(echo "$REG_OUTPUT" | grep -i "v4:" | awk '{print $2}')
+
+if [[ -z "$PRIV_KEY" ]]; then
+    echo "❌ Key generation parsing failed."
     exit 1
 fi
 
 echo "Converting profile to wireproxy format..."
-PRIV_KEY=$(grep -i "PrivateKey" warp.conf | awk '{print $3}')
-PEER_PUB=$(grep -i "PublicKey" warp.conf | awk '{print $3}')
-WARP_IP=$(grep -i "Address" warp.conf | awk '{print $3}')
-
 cat << EOF > warp-proxy.conf
 [Interface]
 PrivateKey = $PRIV_KEY
-Address = $WARP_IP
+Address = $WARP_IP/32
 DNS = 1.1.1.1, 1.0.0.1
 
 [Peer]
