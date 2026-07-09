@@ -11,7 +11,7 @@ DIRTY_IP=$(curl -s --noproxy '*' --max-time 10 ifconfig.me)
 echo "1. DIRECT IP (Bypassed): $DIRTY_IP"
 
 # 2. SHOW THE PROXIFIED (The 'Clean' Cloudflare IP)
-CLEAN_IP=$(curl -s --max-time 10 ifconfig.me)
+CLEAN_IP=$(curl -4 -s --max-time 10 ifconfig.me)
 echo "2. PROXY IP (Active):   $CLEAN_IP"
 
 echo "-------------------------------------------------"
