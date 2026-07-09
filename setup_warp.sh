@@ -78,7 +78,7 @@ for i in $(seq 1 30); do
 done
 
 echo "Manually testing socks5 at port 40000"
-curl -s --max-time 10 -x socks5h://127.0.0.1:40000 ifconfig.me
+curl -4 -s --max-time 10 -x socks5h://127.0.0.1:40000 ifconfig.me
 echo ""
 sleep 2
 ss -ntlp
