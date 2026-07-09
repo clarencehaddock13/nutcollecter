@@ -35,7 +35,7 @@ warp-cli --accept-tos connect
 sleep 5
 
 echo "Manually testing socks5 at port 40000"
-curl -s -x socks5h://127.0.0.1:40000 ifconfig.me
+curl -s -x socks5h://127.0.0.1:40000 api.ipify.org
 echo ""
 sleep 2
 netstat -ntlp
