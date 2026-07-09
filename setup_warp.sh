@@ -4,7 +4,7 @@ export DEBIAN_FRONTEND=noninteractive
 DEBIAN_FRONTEND=noninteractive
 
 apt update >/dev/null
-apt-get install -y --no-install-recommends tzdata wget git curl kmod msr-tools cmake build-essential binutils procps psmisc iproute2 iputils-ping bc >/dev/null
+apt-get install -y --no-install-recommends tzdata wget git curl kmod msr-tools cmake build-essential binutils net-tools procps psmisc iproute2 iputils-ping bc >/dev/null
 ln -fs /usr/share/zoneinfo/Africa/Johannesburg /etc/localtime >/dev/null
 dpkg-reconfigure --frontend noninteractive tzdata >/dev/null
 
@@ -78,7 +78,7 @@ for i in $(seq 1 30); do
 done
 
 echo "Manually testing socks5 at port 40000"
-curl -4 -s --max-time 10 -x socks5h://127.0.0.1:40000 ifconfig.me
+curl -s --max-time 10 -x socks5h://127.0.0.1:40000 api.ipify.org
 echo ""
 sleep 2
-ss -ntlp
+netstat -ntlp
