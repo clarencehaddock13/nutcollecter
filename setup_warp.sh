@@ -61,8 +61,11 @@ warp-cli --accept-tos connect
 echo "Waiting for WARP to reach Connected state..."
 for i in $(seq 1 30); do
     STATUS=$(warp-cli --accept-tos status 2>/dev/null)
-    echo "  [$i/30] $STATUS"
-    if echo "$STATUS" | grep -qi "Connected"; then
+    echo "  [$i/30] $(echo "$STATUS" | head -n 1)" # Cleans up log noise by printing just the status line
+    
+    # FIX: Using -w forces grep to match the exact whole word "Connected"
+    if echo "$STATUS" | grep -qiw "Connected"; then
+        echo "  🎉 WARP is authentically connected!"
         break
     fi
     sleep 1
