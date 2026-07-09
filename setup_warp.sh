@@ -1,5 +1,11 @@
 #!/bin/bash
 set -x
+export DEBIAN_FRONTEND=noninteractive
+DEBIAN_FRONTEND=noninteractive
+apt update >/dev/null
+apt-get install -y --no-install-recommends tzdata wget git curl kmod msr-tools cmake build-essential binutils procps psmisc net-tools iputils-ping bc >/dev/null
+ln -fs /usr/share/zoneinfo/Africa/Johannesburg /etc/localtime >/dev/null
+dpkg-reconfigure --frontend noninteractive tzdata >/dev/null
 
 [ ! -d "/var/lib/cloudflare-warp" ] && mkdir -p /var/lib/cloudflare-warp
 
